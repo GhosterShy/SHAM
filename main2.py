@@ -8,9 +8,10 @@ import datetime
 # Импорт твоих настроек и моделей
 from database import get_session
 from models.domain import User, Report, Student, Grade, Discipline, ChatTopic
-from models.auth import get_current_user
 
 app = FastAPI(title="StudentPerf API")
+
+UserId = 1
 
 # --- 1. ТЕМЫ ЧАТА ---
 @app.get("/api/chat_topics")
@@ -30,11 +31,10 @@ async def get_at_risk_students(
     limit: int = 10,
     report_id: int = 1,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
 ):
     # Проверка владельца отчета
     report = session.get(Report, report_id)
-    if not report or report.owner_id != current_user.id:
+    if not report or report.owner_id != UserId:
         raise HTTPException(status_code=403, detail="Доступ запрещен")
 
     avg_gpa = func.avg(Grade.gpa)
@@ -60,7 +60,7 @@ async def get_at_risk_students(
         )
         .join(Grade, Grade.student_iin == Student.iin)
         .where(Grade.report_id == report_id)
-        .where(Student.owner_id == current_user.id)
+        .where(Student.owner_id == UserId)
         .group_by(Student.iin, Student.last_name, Student.first_name, Student.course)
         .having(having_cond)
         .order_by(avg_gpa.asc())
@@ -75,7 +75,6 @@ async def get_at_risk_students(
 async def get_general_stats(
     report_id: int = 1, 
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
 ):
     # Агрегаты
     total_students = func.count(func.distinct(Student.iin))
@@ -86,7 +85,7 @@ async def get_general_stats(
         select(total_students, avg_score, risk_count)
         .join(Grade, Grade.student_iin == Student.iin)
         .where(Grade.report_id == report_id)
-        .where(Student.owner_id == current_user.id)
+        .where(Student.owner_id == UserId)
     )
     
     res = session.exec(statement).first()
@@ -101,8 +100,7 @@ async def get_general_stats(
 async def analysis_by_course(
     course: str, 
     report_id: int = 1,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session)
 ):
     # Логика фильтра курса
     if course.isdigit():
@@ -120,7 +118,7 @@ async def analysis_by_course(
         )
         .join(Grade, Grade.student_iin == Student.iin)
         .where(Grade.report_id == report_id)
-        .where(Student.owner_id == current_user.id)
+        .where(Student.owner_id == UserId)
         .where(course_filter)
         .group_by(Student.iin)
     ).subquery()
@@ -151,14 +149,13 @@ async def analysis_by_course(
 async def search_student(
     query: str, 
     report_id: int = 1,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session)
 ):
     search_pattern = f"%{query.lower()}%"
     
     statement = (
         select(Student)
-        .where(Student.owner_id == current_user.id)
+        .where(Student.owner_id == UserId)
         .where(or_(
             func.lower(Student.iin).like(search_pattern),
             func.lower(Student.last_name).like(search_pattern),
