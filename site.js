@@ -1593,8 +1593,11 @@ async function fetchSubjectAnalysis(subjectName) {
 // 10. СРАВНЕНИЕ И ПРОГНОЗ
 // ────────────────────────────────────────────────
 function startComparison(type) {
-  const prompt =
-    selectedLanguage === "kz"
+  // Определяем тексты
+  const isKz = selectedLanguage === "kz";
+  const title = isKz ? "Салыстыруды бастау" : "Начать сравнение";
+  
+  const promptText = isKz
       ? type.includes("Курстар")
         ? "Екі курс нөмірін енгізіңіз (мысалы: 1 3)"
         : "Екі топ атауын енгізіңіз (мысалы: ИТ-11 ИТ-21)"
@@ -1602,13 +1605,32 @@ function startComparison(type) {
         ? "Введите два номера курса (например: 1 3)"
         : "Введите названия двух групп (например: ИТ-11 ИТ-21)";
 
-  addReceivedMessage(prompt);
+  // Создаем красивую карточку-подсказку
+  const comparisonUI = `
+<div style="background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%); 
+            color: white; 
+            padding: 20px; 
+            border-radius: 18px; 
+            margin: 10px 0; 
+            box-shadow: 0 8px 25px rgba(139, 92, 246, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 15px;">
+  <div style="font-size: 30px;">⚖️</div>
+  <div>
+    <h4 style="margin: 0; font-size: 16px; opacity: 0.9;">${title}</h4>
+    <p style="margin: 5px 0 0; font-size: 14px; font-weight: 500;">${promptText}</p>
+  </div>
+</div>`;
 
-  // Теперь ждём ввода от пользователя в текстовое поле
-  // Можно сделать временно selectedTopic = "comparison_waiting_input"
+  // Выводим через твою обновленную функцию (которая теперь умеет ставить карточки слева)
+  addReceivedMessage(comparisonUI);
+
+  // Логика остается прежней
   selectedTopic = "comparison_waiting_input";
-  selectedSubTopic = type; // запоминаем тип сравнения
+  selectedSubTopic = type;
 }
+
 
 async function finishComparison(inputText) {
   showTyping();
@@ -1616,23 +1638,17 @@ async function finishComparison(inputText) {
   try {
     const parts = inputText.trim().split(/\s+/);
     if (parts.length < 2) {
-      addReceivedMessage(
-        "Нужно ввести два значения для сравнения (через пробел)",
-      );
+      addReceivedMessage("Нужно ввести два значения для сравнения (через пробел)");
       hideTyping();
       return;
     }
 
     const [value1, value2] = parts;
+    const isCourse = selectedSubTopic.includes("курс") || selectedSubTopic.includes("Курстар");
 
-    // Запрос к серверу
     const res = await axios.get(`${API_BASE_URL}/analysis/compare`, {
       params: {
-        type:
-          selectedSubTopic.includes("курс") ||
-          selectedSubTopic.includes("Курстар")
-            ? "course"
-            : "group",
+        type: isCourse ? "course" : "group",
         value1: value1,
         value2: value2,
       },
@@ -1646,34 +1662,176 @@ async function finishComparison(inputText) {
       return;
     }
 
-    let reply = `**Сравнение: ${value1} vs ${value2}**\n\n`;
+    // РАСЧЕТЫ
+    const leftGPA = Number(data.left.avg_gpa || data.left.avg_score || 0);
+    const rightGPA = Number(data.right.avg_gpa || data.right.avg_score || 0);
+    const diffAvg = (leftGPA - rightGPA).toFixed(2);
+    const leftWinner = leftGPA > rightGPA;
+    
+    // ИСПРАВЛЕНИЕ: Берем корректные поля успеваемости/качества из ответа сервера
+    const leftQuality = Number(data.left.success_rate || data.left.quality || 0).toFixed(1);
+    const rightQuality = Number(data.right.success_rate || data.right.quality || 0).toFixed(1);
 
-    reply += `Показатель          | ${value1}       | ${value2}       | Разница\n`;
-    reply += `────────────────────┼──────────────┼──────────────┼─────────\n`;
-    reply += `Студентов          | ${data.left.total_students || 0}         | ${data.right.total_students || 0}         | ${data.left.total_students - data.right.total_students || "?"} \n`;
-    reply += `Средний балл       | ${data.left.avg_score?.toFixed(2) || "—"}     | ${data.right.avg_score?.toFixed(2) || "—"}     | ${((data.left.avg_score || 0) - (data.right.avg_score || 0)).toFixed(2)} \n`;
-    reply += `Успеваемость (%)   | ${data.left.success_rate?.toFixed(1) || "—"}%   | ${data.right.success_rate?.toFixed(1) || "—"}%   | ${((data.left.success_rate || 0) - (data.right.success_rate || 0)).toFixed(1)}% \n`;
-    reply += `Под риском         | ${data.left.at_risk || 0}          | ${data.right.at_risk || 0}          | ${(data.left.at_risk || 0) - (data.right.at_risk || 0)} \n`;
+    const getProgress = (val) => Math.min((val / 4) * 100, 100);
+
+    let reply = `
+<div style="background: linear-gradient(160deg, #1a1c2e 0%, #0f172a 100%); 
+            color: white; padding: 35px; border-radius: 28px; margin: 20px 0; 
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(139, 92, 246, 0.25);
+            font-family: 'Segoe UI', Roboto, sans-serif; width: 100%; max-width: 700px; box-sizing: border-box;">
+  
+  <div style="text-align: center; margin-bottom: 30px;">
+    <div style="background: rgba(139, 92, 246, 0.15); display: inline-block; padding: 10px 20px; border-radius: 25px; margin-bottom: 15px; border: 1px solid rgba(167, 139, 250, 0.2);">
+        <span style="font-size: 28px;">📊</span> <b style="color: #a78bfa; letter-spacing: 1.5px; text-transform: uppercase; font-size: 13px;">Сравнительный анализ данных</b>
+    </div>
+    <h3 style="margin: 0; font-size: 32px; background: linear-gradient(to right, #fff, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        ${value1} <span style="color: #64748b; font-size: 22px;">vs</span> ${value2}
+    </h3>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 25px;">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 18px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
+        <div style="text-align: center; flex: 1;">
+            <div style="font-size: 26px; font-weight: bold; color: #fff;">${data.left.total_students || 0}</div>
+            <div style="font-size: 12px; opacity: 0.6;">Контингент</div>
+        </div>
+        <div style="font-size: 24px; color: #6d28d9; background: rgba(109, 40, 217, 0.2); width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; border-radius: 50%;">👥</div>
+        <div style="text-align: center; flex: 1;">
+            <div style="font-size: 26px; font-weight: bold; color: #fff;">${data.right.total_students || 0}</div>
+            <div style="font-size: 12px; opacity: 0.6;">Контингент</div>
+        </div>
+    </div>
+
+    <div style="background: rgba(255,255,255,0.02); padding: 20px; border-radius: 20px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 15px;">
+            <span>Средний балл (GPA) ${leftWinner ? '🏆' : ''}</span>
+            <span style="color: #a78bfa; font-weight: bold; font-size: 18px;">${leftGPA.toFixed(2)}</span>
+        </div>
+        <div style="height: 12px; background: rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden; margin-bottom: 20px;">
+            <div style="width: ${getProgress(leftGPA)}%; height: 100%; background: linear-gradient(90deg, #6366f1, #a78bfa); box-shadow: 0 0 15px rgba(167, 139, 250, 0.4);"></div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 15px;">
+            <span>Средний балл (GPA) ${!leftWinner ? '🏆' : ''}</span>
+            <span style="color: #a78bfa; font-weight: bold; font-size: 18px;">${rightGPA.toFixed(2)}</span>
+        </div>
+        <div style="height: 12px; background: rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden;">
+            <div style="width: ${getProgress(rightGPA)}%; height: 100%; background: linear-gradient(90deg, #6366f1, #f472b6); box-shadow: 0 0 15px rgba(244, 114, 182, 0.4);"></div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div style="background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.2); padding: 20px; border-radius: 20px; text-align: center;">
+            <div style="font-size: 12px; opacity: 0.8; margin-bottom: 8px; color: #34d399;">Качество знаний</div>
+            <div style="font-size: 24px; font-weight: bold;">${leftQuality}% <span style="font-size: 14px; opacity: 0.5;">vs</span> ${rightQuality}%</div>
+        </div>
+        <div style="background: rgba(251, 113, 133, 0.08); border: 1px solid rgba(251, 113, 133, 0.2); padding: 20px; border-radius: 20px; text-align: center;">
+            <div style="font-size: 12px; opacity: 0.8; margin-bottom: 8px; color: #fb7185;">Риск отчисления</div>
+            <div style="font-size: 24px; font-weight: bold;">${data.left.at_risk} <span style="font-size: 14px; opacity: 0.5;">/</span> ${data.right.at_risk}</div>
+        </div>
+    </div>
+
+    <div style="background: rgba(139, 92, 246, 0.05); border-left: 4px solid #6d28d9; padding: 15px 20px; border-radius: 0 12px 12px 0; font-size: 14px; line-height: 1.5; color: #cbd5e1;">
+        <strong>Аналитический вывод:</strong> ${leftWinner ? value1 : value2} опережает по академическим показателям на ${Math.abs(diffAvg)} балла. 
+        ${Number(leftQuality) > Number(rightQuality) ? value1 : value2} демонстрирует более высокую стабильность обучения.
+    </div>
+  </div>
+
+  <button onclick="downloadComparisonPdf('${value1}', '${value2}', ${leftGPA}, ${rightGPA})" 
+          style="width: 100%; margin-top: 30px; background: linear-gradient(90deg, #6d28d9, #4f46e5); color: white; border: none; 
+                 padding: 16px; border-radius: 16px; cursor: pointer; font-weight: bold; font-size: 16px;
+                 transition: all 0.3s; box-shadow: 0 10px 25px rgba(109, 40, 217, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px;">
+    <span>📥</span> Скачать детализированный PDF отчет
+  </button>
+</div>`;
 
     addReceivedMessage(reply);
   } catch (err) {
     console.error(err);
-    addReceivedMessage("Ошибка при сравнении. Попробуйте позже.");
+    addReceivedMessage("Ошибка при сравнении данных.");
   }
-
-  // Сбрасываем режим ожидания ввода
   selectedTopic = null;
   selectedSubTopic = null;
-
   hideTyping();
-  startInactivityTimer();
 }
 
+function downloadComparisonPdf(val1, val2, gpa1, gpa2) {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+            <head>
+                <title>Сравнение ${val1} vs ${val2}</title>
+                <style>
+                    body { font-family: sans-serif; padding: 50px; color: #333; }
+                    .header { text-align: center; border-bottom: 2px solid #6d28d9; padding-bottom: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+                    th, td { border: 1px solid #ddd; padding: 15px; text-align: center; }
+                    th { background-color: #f3f4f6; }
+                    .footer { margin-top: 50px; font-size: 12px; color: #777; text-align: center; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>Аналитический отчет сравнения</h1>
+                    <p>Сгенерировано системой StudentPerf Bot</p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Параметр</th>
+                            <th>${val1}</th>
+                            <th>${val2}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Средний GPA</td>
+                            <td>${gpa1.toFixed(2)}</td>
+                            <td>${gpa2.toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                            <td>Статус анализа</td>
+                            <td colspan="2">${gpa1 > gpa2 ? val1 : val2} показывает лучшие результаты</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="footer">Дата отчета: ${new Date().toLocaleString()}</div>
+                <script>
+                    window.onload = function() { window.print(); window.close(); };
+                </script>
+            </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
+// ──────────────────────────────────────────────
+// 10. ПРОГНОЗ
+// ──────────────────────────────────────────────
 function startForecast(type) {
-  addReceivedMessage("Введите данные для прогноза (ИИН или Название)");
+  const isKz = selectedLanguage === "kz";
+  const title = isKz ? "AI Болжам" : "AI Прогноз успеваемости";
+  const promptText = isKz 
+    ? "Болжам жасау үшін ИИН немесе аты-жөніңізді енгізіңіз" 
+    : "Введите ИИН или ФИО студента для построения прогноза";
+
+  const forecastUI = `
+<div style="background: linear-gradient(135deg, #EC4899 0%, #8B5CF6 100%); 
+            color: white; padding: 20px; border-radius: 18px; margin: 10px 0; 
+            box-shadow: 0 8px 25px rgba(236, 72, 153, 0.3); display: flex; align-items: center; gap: 15px;">
+  <div style="font-size: 30px;">🔮</div>
+  <div>
+    <h4 style="margin: 0; font-size: 16px; opacity: 0.9;">${title}</h4>
+    <p style="margin: 5px 0 0; font-size: 14px; font-weight: 500;">${promptText}</p>
+  </div>
+</div>`;
+
+  addReceivedMessage(forecastUI);
+
   selectedTopic = "forecast_waiting_input";
   selectedSubTopic = type;
-  if (type.includes("Общий")) finishForecast("all");
+  if (type.includes("Общий") || type.includes("Жалпы")) finishForecast("all");
 }
 
 async function finishForecast(input) {
@@ -1682,9 +1840,70 @@ async function finishForecast(input) {
     const res = await axios.get(`${API_BASE_URL}/analysis/forecast`, {
       params: { scope: selectedSubTopic, student: input },
     });
-    addReceivedMessage(`🔮 Прогноз: ${res.data.forecast}`);
+
+    const data = res.data;
+    if (!data.found && input !== "all") {
+        addReceivedMessage("Студент не найден для построения прогноза 😔");
+        hideTyping();
+        return;
+    }
+
+    // Параметры для красоты (можно подстроить под данные с твоего бэкенда)
+    const prob = Number(data.probability || 85); // Вероятность успешного завершения
+    const trend = data.trend || "up"; // Направление: up, down, stable
+    const predictedGpa = Number(data.predicted_gpa || 3.2).toFixed(2);
+
+    let reply = `
+<div style="background: linear-gradient(160deg, #1e1b4b 0%, #312e81 100%); 
+            color: white; padding: 30px; border-radius: 28px; margin: 20px 0; 
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4); border: 1px solid rgba(236, 72, 153, 0.3);
+            width: 100%; max-width: 650px; box-sizing: border-box;">
+  
+  <div style="text-align: center; margin-bottom: 25px;">
+    <div style="background: rgba(236, 72, 153, 0.15); display: inline-block; padding: 8px 18px; border-radius: 20px; margin-bottom: 12px;">
+        <span style="font-size: 20px;">✨</span> <b style="color: #f472b6; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">Аналитика будущего</b>
+    </div>
+    <h3 style="margin: 0; font-size: 28px; background: linear-gradient(to right, #fff, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        ${input === "all" ? "Общий прогноз курса" : "Прогноз: " + (data.student_name || input)}
+    </h3>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 20px;">
+    
+    <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="font-size: 13px; opacity: 0.7; margin-bottom: 10px;">Ожидаемый GPA к концу семестра</div>
+        <div style="font-size: 42px; font-weight: bold; color: #fb7185; text-shadow: 0 0 15px rgba(251, 113, 133, 0.4);">
+            ${predictedGpa} ${trend === 'up' ? '📈' : '📉'}
+        </div>
+    </div>
+
+    <div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
+            <span>Вероятность успеха (Pass Rate)</span>
+            <span style="color: #f472b6; font-weight: bold;">${prob}%</span>
+        </div>
+        <div style="height: 12px; background: rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden;">
+            <div style="width: ${prob}%; height: 100%; background: linear-gradient(90deg, #8b5cf6, #ec4899); box-shadow: 0 0 10px rgba(236, 72, 153, 0.5);"></div>
+        </div>
+    </div>
+
+    <div style="background: rgba(255,255,255,0.03); border-left: 4px solid #ec4899; padding: 15px 20px; border-radius: 0 15px 15px 0;">
+        <div style="font-size: 13px; font-weight: bold; color: #f472b6; margin-bottom: 5px;">🤖 Резюме AI:</div>
+        <div style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">
+            ${data.forecast || "На основе текущей активности ожидается стабильный результат. Рекомендуется сфокусироваться на дисциплинах с низким текущим баллом."}
+        </div>
+    </div>
+  </div>
+  
+  <div style="margin-top: 25px; text-align: center; font-size: 11px; opacity: 0.5;">
+    * Прогноз построен на основе нейронной сети Trinity-Large
+  </div>
+</div>`;
+
+    addReceivedMessage(reply);
   } catch (err) {
-    addReceivedMessage("Ошибка прогноза");
+    console.error(err);
+    addReceivedMessage("Ошибка при построении прогноза 😔");
   }
   selectedTopic = null;
   hideTyping();

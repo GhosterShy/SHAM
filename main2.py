@@ -1,12 +1,12 @@
 import io
 from typing import List, Optional
 from collections import OrderedDict
-
+from sqlalchemy import text
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, func, or_, and_, col
-from sqlalchemy import Numeric
+from sqlalchemy import Numeric,case
 
 # Импорт моделей и зависимостей (убедись, что пути верны)
 from database import get_session
@@ -90,6 +90,87 @@ async def get_at_risk_students(
         "total_at_risk": total_at_risk,
         "students": [row._asdict() for row in results]
     }
+
+
+
+
+
+@app.get("/analysis/by_course/{course}")
+async def analysis_by_course(
+    course: str, 
+    report_id: int = 1, 
+    session: Session = Depends(get_session)
+):
+    # 1. Определяем фильтр курса
+    if course.isdigit():
+        course_filter = (Student.course == int(course))
+    elif course.lower() in ["магистратура", "magistratura"]:
+        course_filter = (Student.course >= 5)
+    else:
+        raise HTTPException(status_code=400, detail="Неверный формат курса")
+
+    # 2. Подзапрос для расчета среднего GPA по каждому студенту (аналог WITH в SQL)
+    # Используем subquery(), чтобы потом агрегировать результаты
+    student_stats_query = (
+        select(
+            Student.iin,
+            func.avg(Grade.gpa).label("st_gpa")
+        )
+        .join(Grade, Grade.student_iin == Student.iin, isouter=True)
+        .where(course_filter)
+        .where(Grade.report_id == report_id)
+        .group_by(Student.iin)
+    ).subquery()
+
+    # 3. Финальная агрегация данных из подзапроса
+    # Используем case для имитации условий внутри SUM
+    final_stats_stmt = select(
+        func.count().label("total_students"),
+        func.round(func.cast(func.avg(student_stats_query.c.st_gpa), Numeric), 2).label("avg_gpa"),
+        func.sum(case((student_stats_query.c.st_gpa >= 2.0, 1), else_=0)).label("success_count"),
+        func.sum(case((student_stats_query.c.st_gpa < 1.7, 1), else_=0)).label("at_risk_count")
+    )
+
+    result = session.exec(final_stats_stmt).first()
+
+    # 4. Обработка пустого результата
+    if not result or result.total_students == 0:
+        return {
+            "course": course,
+            "total_students": 0,
+            "avg_gpa": 0,
+            "success_rate": 0,
+            "at_risk": 0,
+            "at_risk_percent": 0,
+            "message": "На этом курсе пока нет студентов"
+        }
+
+    total = result.total_students
+    success = result.success_count or 0
+    at_risk = result.at_risk_count or 0
+
+    return {
+        "course": course,
+        "total_students": total,
+        "avg_gpa": float(result.avg_gpa or 0),
+        "success_rate": round((success / total) * 100, 1),
+        "at_risk": int(at_risk),
+        "at_risk_percent": round((at_risk / total) * 100, 1),
+        "message": "Аналитика успешно рассчитана через SQLModel"
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- 3. ПОИСК СТУДЕНТА (ДЕТАЛЬНЫЙ) ---
 @app.post("/search_student")
@@ -235,41 +316,6 @@ async def analysis_by_subject(
     report_id: int = 1,
     session: Session = Depends(get_session)
 ):
-    """Статистика по конкретному предмету"""
-    search_pattern = f"%{subject.lower()}%"
-    
-    statement = (
-        select(
-            func.count(Grade.id).label("total_records"),
-            func.avg(Grade.total_score).label("avg_score"),
-            func.max(Grade.total_score).label("max_score"),
-            func.count(Grade.id).filter(Grade.total_score >= 50).label("passed")
-        )
-        .join(Discipline, Discipline.code == Grade.discipline_code)
-        .where(func.lower(Discipline.name).like(search_pattern), Grade.report_id == report_id)
-    )
-    
-    res = session.exec(statement).first()
-    if not res or res.total_records == 0:
-        return {"found": False}
-
-    total = res.total_records
-    return {
-        "found": True,
-        "total_students": total,
-        "avg_score": round(float(res.avg_score or 0), 2),
-        "max_score": res.max_score,
-        "success_rate": round((res.passed / total * 100), 1)
-    }
-
-
-
-@app.get("/analysis/by_subject")
-async def analysis_by_subject(
-    subject: str, 
-    report_id: int = 1,
-    session: Session = Depends(get_session)
-):
     subject_pattern = f"%{subject.strip().lower()}%"
     
     # Считаем статистику по оценкам для конкретного предмета
@@ -332,7 +378,7 @@ async def get_course_students(
         .join(Grade, Grade.student_iin == Student.iin)
         .where(course_filter, Grade.report_id == report_id, Student.owner_id == UserId)
         .group_by(Student.iin, Student.last_name, Student.first_name, Student.specialty_code)
-        .order_by(col("gpa").asc())
+        .order_by(text("gpa ASC")) # Сортируем по имени лейбла
         .limit(limit)
     )
 
@@ -365,12 +411,13 @@ async def get_top_students(
     report_id: int = 1,
     session: Session = Depends(get_session)
 ):
+    gpa_expression = func.round(func.cast(func.avg(Grade.gpa), Numeric), 2)
     statement = (
         select(
             Student.iin,
             (Student.last_name + " " + Student.first_name).label("full_name"),
             Student.course,
-            func.round(func.cast(func.avg(Grade.gpa), Numeric), 2).label("gpa")
+            gpa_expression.label("gpa") # Используем выражение здесь
         )
         .join(Grade, Grade.student_iin == Student.iin)
         .where(Grade.report_id == report_id, Student.owner_id == UserId)
@@ -380,7 +427,10 @@ async def get_top_students(
         statement = statement.where(Student.course == int(course))
 
     statement = statement.group_by(Student.iin, Student.last_name, Student.first_name, Student.course)
-    statement = statement.order_by(col("gpa").desc()).limit(limit)
+    
+    # 2. Сортируем по самому выражению, а не по строковому псевдониму
+    # Убираем col()
+    statement = statement.order_by(gpa_expression.desc()).limit(limit)
 
     results = session.exec(statement).all()
     return {
@@ -472,3 +522,9 @@ async def get_guide_content(
     result.pop("pdf_data", None) 
     
     return result
+
+
+# --- ЗАПУСК СЕРВЕРА ---
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
