@@ -144,16 +144,31 @@ function addReceivedMessage(text, imageSrc = null) {
   const container = document.createElement("div");
   container.classList.add("message-container");
 
-  // ПРОВЕРКА: Если в тексте есть наш градиент (карточка студента), 
-  // выводим без стандартного фона сообщения
+  // Если в тексте есть градиент (карточка анализа или студента)
   if (text.includes("linear-gradient")) {
-    container.innerHTML = text; 
+    // 1. Создаем обертку, чтобы аватар и карточка стояли в ряд
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "display: flex; align-items: flex-end; gap: 8px; width: 100%; justify-content: flex-start; margin-bottom: 10px;";
+
+    // 2. Добавляем аватарку бота
+    const avatar = document.createElement("div");
+    avatar.classList.add("bot-avatar");
+    avatar.innerHTML = `<img src="https://img.icons8.com/fluency/48/robot-2.png" alt="bot">`;
+
+    // 3. Создаем контейнер для самой карточки
+    const cardContent = document.createElement("div");
+    cardContent.style.flex = "0 1 auto"; 
+    cardContent.style.maxWidth = "85%"; // Ограничиваем, чтобы не прилипало к правому краю
+    cardContent.innerHTML = text;
+
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(cardContent);
+    container.appendChild(wrapper);
   } else {
-    // Для обычного текста создаем стандартное облачко
+    // Стандартный код для обычных текстовых сообщений
     const messageDiv = document.createElement("div");
     messageDiv.classList.add("message", "received");
 
-    // Рендерим жирный текст и переносы строк
     messageDiv.innerHTML = text
       .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
       .replace(/\n/g, "<br>");
@@ -171,16 +186,13 @@ function addReceivedMessage(text, imageSrc = null) {
 
   chatMessages.appendChild(container);
   
-  // Используем плавный скролл
   chatMessages.scrollTo({
     top: chatMessages.scrollHeight,
     behavior: 'smooth'
   });
 
-  // Если ты отключил сохранение, эту строку можно удалить
   saveMessage(text, "received", !!imageSrc); 
 }
-
 // ────────────────────────────────────────────────
 // 5. ВЫБОР ЯЗЫКА И ПРИВЕТСТВИЕ
 // ────────────────────────────────────────────────
@@ -1265,81 +1277,396 @@ async function fetchCourseAnalysis(courseText) {
 }
 async function fetchAtRiskStudents(levelText) {
   showTyping();
+
   try {
-    let threshold = levelText.includes("1.0")
-      ? "critical"
-      : levelText.includes("1.5")
-        ? "low"
-        : "all";
-    const res = await axios.get(`${API_BASE_URL}/analysis/at_risk`, {
-      params: { threshold },
-    });
-    const data = res.data;
-    if (!data.found) {
-      addReceivedMessage("Студентов под риском не найдено.");
+    let params = {};
+    if (levelText.includes("1.0") || levelText.includes("критично")) {
+      params.threshold = "critical";
+    } else if (levelText.includes("1.5")) {
+      params.threshold = "low";
+    } else if (levelText.includes("2+") || levelText.includes("2+ пән")) {
+      params.threshold = "multiple_low";
     } else {
-      addReceivedMessage(`⚠️ Студентов под риском: ${data.total_at_risk}`);
+      params.threshold = "all";
     }
+
+    const res = await axios.get(`${API_BASE_URL}/analysis/at_risk`, { params });
+    const data = res.data;
+
+    if (!data.found || data.students.length === 0) {
+      addReceivedMessage(`
+<div style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); 
+            color: white; 
+            padding: 24px; 
+            border-radius: 16px; 
+            margin: 16px 0; 
+            box-shadow: 0 10px 40px rgba(16,185,129,0.3); 
+            text-align: center;">
+
+  <span style="font-size: 48px; display: block; margin-bottom: 16px;">🎉</span>
+  <h3 style="margin: 0; font-size: 24px;">Отличные новости!</h3>
+  <p style="margin: 12px 0 0; font-size: 16px; opacity: 0.95;">
+    На данный момент студентов под риском нет<br>
+    Курс/группа в отличной форме!
+  </p>
+</div>`);
+      hideTyping();
+      return;
+    }
+
+    // Красивая карточка с общим обзором
+    let overview = `
+<div style="background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%); 
+            color: white; 
+            padding: 20px; 
+            border-radius: 16px; 
+            margin: 12px 0 20px; 
+            box-shadow: 0 8px 32px rgba(239,68,68,0.3);">
+
+  <div style="display: flex; align-items: center; margin-bottom: 16px;">
+    <span style="font-size: 32px; margin-right: 16px;">⚠️</span>
+    <h3 style="margin: 0; font-size: 22px;">Студенты под риском</h3>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; text-align: center;">
+    <div>
+      <div style="font-size: 14px; opacity: 0.9;">Всего под риском</div>
+      <div style="font-size: 36px; font-weight: bold;">${data.total_at_risk}</div>
+    </div>
+    
+    <div>
+      <div style="font-size: 14px; opacity: 0.9;">Показано</div>
+      <div style="font-size: 36px; font-weight: bold;">${data.students.length}</div>
+    </div>
+  </div>
+
+  <div style="margin-top: 20px; font-size: 15px; opacity: 0.9; text-align: center;">
+    Уровень: <strong>${levelText}</strong>
+  </div>
+</div>`;
+
+    // Список студентов — карточки с цветовой индикацией
+    let studentsList = data.students
+      .map(
+        (s, i) => `
+<div style="background: rgba(255,255,255,0.08); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255,255,255,0.12); 
+            padding: 16px; 
+            border-radius: 12px; 
+            margin-bottom: 12px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;">
+
+  <div style="flex: 1;">
+    <strong style="font-size: 16px; display: block;">${i + 1}. ${s.full_name}</strong>
+    <small style="opacity: 0.8; display: block; margin-top: 4px;">
+      ИИН: ${s.iin} • Курс: ${s.course || "—"} • Группа: ${s.group || "—"}
+    </small>
+  </div>
+
+  <div style="text-align: right; min-width: 100px;">
+    <div style="font-size: 20px; font-weight: bold; color: #FF6B6B;">
+      GPA: ${s.gpa?.toFixed(2) || "—"}
+    </div>
+    <small style="color: #FFCCC8;">
+      ${s.low_scores || 0} низких оценок
+    </small>
+  </div>
+</div>
+`,
+      )
+      .join("");
+
+    let fullReply =
+      overview +
+      `
+<div style="background: #111827; 
+            color: #E0E0FF; 
+            padding: 20px; 
+            border-radius: 16px; 
+            max-height: 400px; 
+            overflow-y: auto; 
+            border: 1px solid #EF444433;">
+  ${studentsList}
+</div>`;
+
+    if (data.total_at_risk > data.students.length) {
+      fullReply += `
+<div style="text-align: center; margin-top: 16px; font-size: 14px; opacity: 0.8;">
+  Показано ${data.students.length} из ${data.total_at_risk}. 
+  Остальные студенты — по дополнительному запросу.
+</div>`;
+    }
+
+    addReceivedMessage(fullReply);
   } catch (err) {
-    addReceivedMessage("Ошибка загрузки списка риска");
+    console.error(err);
+    addReceivedMessage(`
+<div style="background: #1E1E2E; color: #FFCCC8; padding: 20px; border-radius: 16px; text-align: center;">
+  <span style="font-size: 32px; display: block; margin-bottom: 12px;">😔</span>
+  <strong>Не удалось загрузить список студентов под риском</strong><br>
+  Попробуйте позже или проверьте подключение.
+</div>`);
   }
+
   hideTyping();
+  startInactivityTimer();
 }
+
 
 async function fetchSubjectAnalysis(subjectName) {
   showTyping();
+
   try {
     const res = await axios.get(`${API_BASE_URL}/analysis/by_subject`, {
       params: { subject: subjectName.trim() },
     });
+
     const data = res.data;
-    if (!data.found) {
-      addReceivedMessage("Данных по дисциплине нет.");
-    } else {
-      addReceivedMessage(
-        `📚 ${subjectName}: Средний балл ${data.avg_score?.toFixed(1)}`,
-      );
+
+    if (!data.found || data.total_students === 0) {
+      addReceivedMessage(`
+<div style="background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%); 
+            color: white; 
+            padding: 24px; 
+            border-radius: 16px; 
+            margin: 16px 0; 
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(107,114,128,0.3);">
+  <span style="font-size: 48px; display: block; margin-bottom: 16px;">📉</span>
+  <h3 style="margin: 0; font-size: 24px;">По дисциплине "${subjectName}"</h3>
+  <p style="margin: 12px 0 0; font-size: 16px; opacity: 0.95;">
+    Данных пока нет 😔<br>
+    Загрузите оценки по этой дисциплине!
+  </p>
+</div>`);
+      hideTyping();
+      return;
     }
+
+ let reply = `
+<div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #e2e8f0;
+            padding: clamp(16px, 5vw, 28px);
+            border-radius: 24px;
+            margin: 16px 0;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+            border: 1px solid #334155;
+            max-width: 100%;
+            overflow-x: auto;">
+
+  <!-- Заголовок -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px;">
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <span style="font-size: clamp(32px, 8vw, 40px);">📚</span>
+      <h3 style="margin: 0; font-size: clamp(20px, 5vw, 26px); font-weight: 700; color: #c084fc;">
+        ${subjectName}
+      </h3>
+    </div>
+    <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; background: rgba(139,92,246,0.15); padding: 8px 16px; border-radius: 20px; white-space: nowrap;">
+      Анализ дисциплины
+    </div>
+  </div>
+
+  <!-- Основные метрики (адаптивная сетка) -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 28px;">
+    <div style="background: rgba(30,41,59,0.6); backdrop-filter: blur(8px); padding: 16px; border-radius: 16px; text-align: center; border: 1px solid #475569; min-height: 120px;">
+      <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; margin-bottom: 8px;">Студентов</div>
+      <div style="font-size: clamp(32px, 8vw, 42px); font-weight: 800; color: #c084fc;">
+        ${data.total_students}
+      </div>
+    </div>
+    
+    <div style="background: rgba(30,41,59,0.6); backdrop-filter: blur(8px); padding: 16px; border-radius: 16px; text-align: center; border: 1px solid #475569; min-height: 120px;">
+      <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; margin-bottom: 8px;">Средний балл</div>
+      <div style="font-size: clamp(32px, 8vw, 42px); font-weight: 800; color: ${data.avg_score >= 70 ? '#34d399' : data.avg_score >= 50 ? '#fbbf24' : '#ff6b6b'}">
+        ${data.avg_score?.toFixed(1) || "—"}
+      </div>
+    </div>
+  </div>
+
+  <!-- Успеваемость + Не сдали -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 28px;">
+    <div style="background: rgba(52,211,153,0.12); padding: 16px; border-radius: 16px; text-align: center; border: 1px solid rgba(52,211,153,0.3); min-height: 120px;">
+      <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; margin-bottom: 8px;">Успеваемость (≥50)</div>
+      <div style="font-size: clamp(28px, 7vw, 38px); font-weight: 800; color: #34d399;">
+        ${data.success_rate?.toFixed(1) || "—"}%
+      </div>
+      <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; margin-top: 8px;">
+        Сдали: ${data.passed || 0}
+      </div>
+    </div>
+    
+    <div style="background: rgba(239,68,68,0.12); padding: 16px; border-radius: 16px; text-align: center; border: 1px solid rgba(239,68,68,0.3); min-height: 120px;">
+      <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; margin-bottom: 8px;">Не сдали</div>
+      <div style="font-size: clamp(28px, 7vw, 38px); font-weight: 800; color: #ff6b6b;">
+        ${data.failed || 0}
+      </div>
+      <div style="font-size: clamp(12px, 3vw, 14px); opacity: 0.8; margin-top: 8px;">
+        (${(100 - (data.success_rate || 0)).toFixed(1)}%)
+      </div>
+    </div>
+  </div>
+
+  <!-- Максимальный балл -->
+  <div style="margin-bottom: 28px; padding: 20px; background: rgba(52,211,153,0.12); border-radius: 16px; text-align: center; border: 1px solid rgba(52,211,153,0.3);">
+    <div style="font-size: clamp(14px, 3.5vw, 16px); opacity: 0.8; margin-bottom: 8px;">Максимальный балл</div>
+    <div style="font-size: clamp(36px, 9vw, 48px); font-weight: 900; color: #34d399;">
+      ${data.max_score || "—"}
+    </div>
+  </div>
+
+  <!-- Специальности (РУП) -->
+  <div style="background: rgba(30,41,59,0.6); backdrop-filter: blur(8px); padding: 24px; border-radius: 16px; border: 1px solid #475569;">
+    <h4 style="margin: 0 0 20px; font-size: clamp(16px, 4vw, 20px); text-align: center; color: #c084fc;">
+      Сравнение по специальностям (РУП)
+    </h4>
+
+    <div style="display: grid; gap: 16px;">
+      ${data.best_specialty ? `
+      <div style="padding: 16px; background: rgba(52,211,153,0.2); border-radius: 12px; border: 1px solid #34d39933;">
+        <div style="font-size: clamp(14px, 3.5vw, 16px); font-weight: bold; color: #34d399;">Лучшая РУП</div>
+        <div style="margin: 8px 0 4px; font-size: clamp(16px, 4vw, 18px);">
+          ${data.best_specialty.code} (${data.best_specialty.name})
+        </div>
+        <div style="font-size: clamp(13px, 3vw, 14px); opacity: 0.9;">
+          Средний балл: <strong>${data.best_specialty.avg_score}</strong> • ${data.best_specialty.total_students} студентов
+        </div>
+      </div>` : ""}
+
+      ${data.worst_specialty ? `
+      <div style="padding: 16px; background: rgba(239,68,68,0.2); border-radius: 12px; border: 1px solid #ff6b6b33;">
+        <div style="font-size: clamp(14px, 3.5vw, 16px); font-weight: bold; color: #ff6b6b;">Худшая РУП</div>
+        <div style="margin: 8px 0 4px; font-size: clamp(16px, 4vw, 18px);">
+          ${data.worst_specialty.code} (${data.worst_specialty.name})
+        </div>
+        <div style="font-size: clamp(13px, 3vw, 14px); opacity: 0.9;">
+          Средний балл: <strong>${data.worst_specialty.avg_score}</strong> • ${data.worst_specialty.total_students} студентов
+        </div>
+      </div>` : ""}
+
+      ${data.top3_specialties?.length > 0 ? `
+      <div style="margin-top: 16px;">
+        <div style="font-size: clamp(13px, 3vw, 15px); opacity: 0.9; text-align: center; margin-bottom: 12px;">Топ-3 специальности</div>
+        <div style="display: grid; gap: 12px;">
+          ${data.top3_specialties.map((s, i) => `
+            <div style="padding: clamp(10px, 2vw, 14px); background: rgba(51,65,85,0.4); border-radius: 12px; display: flex; flex-direction: column; gap: 4px; border: 1px solid #475569;">
+              <div style="font-weight: 600; font-size: clamp(14px, 3.5vw, 16px);">
+                #${i+1}: ${s.code} (${s.name})
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: clamp(13px, 3vw, 14px);">
+                <span>Балл: <strong style="color: #34d399;">${s.avg_score}</strong></span>
+                <span>${s.total_students} ст.</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ""}
+    </div>
+  </div>
+
+  <!-- Футер -->
+  <div style="margin-top: 28px; text-align: center; font-size: clamp(12px, 3vw, 14px); opacity: 0.8;">
+    Данные на основе final_score • ${new Date().toLocaleDateString()}
+  </div>
+
+</div>`;
+
+    addReceivedMessage(reply);
   } catch (err) {
-    addReceivedMessage("Ошибка анализа дисциплины");
+    console.error(err);
+    addReceivedMessage(`
+<div style="background: #1E1E2E; color: #FBBF24; padding: 20px; border-radius: 16px; text-align: center;">
+  <span style="font-size: 36px; display: block; margin-bottom: 12px;">⚠️</span>
+  Не удалось загрузить анализ по дисциплине<br>
+  Попробуйте позже.
+</div>`);
   }
+
   hideTyping();
+  startInactivityTimer();
 }
 
 // ────────────────────────────────────────────────
 // 10. СРАВНЕНИЕ И ПРОГНОЗ
 // ────────────────────────────────────────────────
 function startComparison(type) {
-  addReceivedMessage(
-    type.includes("курс")
-      ? "Введите два номера курса (через пробел)"
-      : "Введите названия двух групп",
-  );
+  const prompt =
+    selectedLanguage === "kz"
+      ? type.includes("Курстар")
+        ? "Екі курс нөмірін енгізіңіз (мысалы: 1 3)"
+        : "Екі топ атауын енгізіңіз (мысалы: ИТ-11 ИТ-21)"
+      : type.includes("курсами")
+        ? "Введите два номера курса (например: 1 3)"
+        : "Введите названия двух групп (например: ИТ-11 ИТ-21)";
+
+  addReceivedMessage(prompt);
+
+  // Теперь ждём ввода от пользователя в текстовое поле
+  // Можно сделать временно selectedTopic = "comparison_waiting_input"
   selectedTopic = "comparison_waiting_input";
-  selectedSubTopic = type;
+  selectedSubTopic = type; // запоминаем тип сравнения
 }
 
 async function finishComparison(inputText) {
   showTyping();
+
   try {
     const parts = inputText.trim().split(/\s+/);
     if (parts.length < 2) {
-      addReceivedMessage("Введите два значения через пробел");
+      addReceivedMessage(
+        "Нужно ввести два значения для сравнения (через пробел)",
+      );
+      hideTyping();
       return;
     }
+
+    const [value1, value2] = parts;
+
+    // Запрос к серверу
     const res = await axios.get(`${API_BASE_URL}/analysis/compare`, {
       params: {
-        type: selectedSubTopic.includes("курс") ? "course" : "group",
-        value1: parts[0],
-        value2: parts[1],
+        type:
+          selectedSubTopic.includes("курс") ||
+          selectedSubTopic.includes("Курстар")
+            ? "course"
+            : "group",
+        value1: value1,
+        value2: value2,
       },
     });
-    addReceivedMessage(`Результат сравнения: ${parts[0]} vs ${parts[1]}`);
+
+    const data = res.data;
+
+    if (!data.found) {
+      addReceivedMessage("Не удалось найти данные для сравнения 😔");
+      hideTyping();
+      return;
+    }
+
+    let reply = `**Сравнение: ${value1} vs ${value2}**\n\n`;
+
+    reply += `Показатель          | ${value1}       | ${value2}       | Разница\n`;
+    reply += `────────────────────┼──────────────┼──────────────┼─────────\n`;
+    reply += `Студентов          | ${data.left.total_students || 0}         | ${data.right.total_students || 0}         | ${data.left.total_students - data.right.total_students || "?"} \n`;
+    reply += `Средний балл       | ${data.left.avg_score?.toFixed(2) || "—"}     | ${data.right.avg_score?.toFixed(2) || "—"}     | ${((data.left.avg_score || 0) - (data.right.avg_score || 0)).toFixed(2)} \n`;
+    reply += `Успеваемость (%)   | ${data.left.success_rate?.toFixed(1) || "—"}%   | ${data.right.success_rate?.toFixed(1) || "—"}%   | ${((data.left.success_rate || 0) - (data.right.success_rate || 0)).toFixed(1)}% \n`;
+    reply += `Под риском         | ${data.left.at_risk || 0}          | ${data.right.at_risk || 0}          | ${(data.left.at_risk || 0) - (data.right.at_risk || 0)} \n`;
+
+    addReceivedMessage(reply);
   } catch (err) {
-    addReceivedMessage("Ошибка сравнения");
+    console.error(err);
+    addReceivedMessage("Ошибка при сравнении. Попробуйте позже.");
   }
+
+  // Сбрасываем режим ожидания ввода
   selectedTopic = null;
+  selectedSubTopic = null;
+
   hideTyping();
+  startInactivityTimer();
 }
 
 function startForecast(type) {
@@ -1370,7 +1697,7 @@ async function queryAiAssistant(question) {
   showTyping();
   try {
     const OPENROUTER_API_KEY =
-      "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";
+      "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";
     const lang =
       { kz: "казахский", ru: "русский", en: "английский" }[selectedLanguage] ||
       "русский";
