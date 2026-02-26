@@ -6,11 +6,11 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, func, or_, and_, col
-from sqlalchemy import Numeric,case
+from sqlalchemy import Numeric,case,desc
 
 # Импорт моделей и зависимостей (убедись, что пути верны)
 from database import get_session
-from models.domain import Student, Grade, Discipline, ChatTopic, Report, GuideSection
+from models.domain import Student, Grade, Discipline, ChatTopic, Report, GuideSection,TopStudentResponse
 
 
 app = FastAPI(title="StudentPerf API")
@@ -38,6 +38,7 @@ async def get_at_risk_students(
     threshold: str = "all", 
     limit: int = 10,
     report_id: int = 1,
+    course:int = 1,
     session: Session = Depends(get_session)
 ):
     """Студенты с низким GPA или долгами"""
@@ -66,6 +67,7 @@ async def get_at_risk_students(
         .join(Grade, Grade.student_iin == Student.iin)
         .where(Grade.report_id == report_id)
         .where(Student.owner_id == UserId)
+        .where(Student.course==course)
         .group_by(Student.iin, Student.last_name, Student.first_name, Student.course)
         .having(having_cond)
         .order_by(avg_gpa.asc())
@@ -404,38 +406,62 @@ async def get_course_students(
 
 
 
+
+
 @app.get("/analysis/top_students")
 async def get_top_students(
-    course: Optional[str] = None, 
-    limit: int = 10, 
-    report_id: int = 1,
-    session: Session = Depends(get_session)
+    course: str = Query(..., description="Номер курса или 'all'"),
+    limit: int = Query(10, description="Максимальное количество студентов"),
+    session: Session = Depends(get_session),
+    report_id: int = 1
 ):
-    gpa_expression = func.round(func.cast(func.avg(Grade.gpa), Numeric), 2)
+    # Исправляем логику фильтрации курсов
+    if course.isdigit():
+        course_filter = (Student.course == int(course))
+    else:
+        # Если "all", создаем условие, которое всегда истинно (все курсы)
+        course_filter = (Student.course > 0) 
+
     statement = (
         select(
             Student.iin,
             (Student.last_name + " " + Student.first_name).label("full_name"),
-            Student.course,
-            gpa_expression.label("gpa") # Используем выражение здесь
+            Student.specialty_code,
+            # Оставляем одну агрегированную колонку для GPA
+            func.round(func.cast(func.avg(Grade.gpa), Numeric), 2).label("gpa_avg")
         )
         .join(Grade, Grade.student_iin == Student.iin)
-        .where(Grade.report_id == report_id, Student.owner_id == UserId)
+        # UserId должен быть определен заранее (например, из токена)
+        .where(course_filter, Grade.report_id == report_id, Student.owner_id == UserId)
+        .group_by(Student.iin, Student.last_name, Student.first_name, Student.specialty_code)
+        # Сортируем DESC для ТОПа (от 4.0 до 0)
+        .order_by(text("gpa_avg DESC")) 
+        .limit(limit)
     )
 
-    if course and course.isdigit():
-        statement = statement.where(Student.course == int(course))
-
-    statement = statement.group_by(Student.iin, Student.last_name, Student.first_name, Student.course)
-    
-    # 2. Сортируем по самому выражению, а не по строковому псевдониму
-    # Убираем col()
-    statement = statement.order_by(gpa_expression.desc()).limit(limit)
-
     results = session.exec(statement).all()
+
+    # Считаем общее количество студентов для этого фильтра
+    total_count_stmt = select(func.count(Student.id)).where(course_filter, Student.owner_id == UserId)
+    total_count = session.exec(total_count_stmt).one()
+
+    students_list = []
+    for row in results:
+        # row - это кортеж (tuple), превращаем в словарь
+        data = {
+            "iin": row.iin,
+            "full_name": row.full_name,
+            "specialty_code": row.specialty_code,
+            "gpa": float(row.gpa_avg)
+        }
+        # Помечаем отличников (GPA > 3.67 — это обычно 'A-')
+        data["is_excellent"] = data["gpa"] >= 3.67
+        students_list.append(data)
+
     return {
-        "found": bool(results),
-        "students": [row._asdict() for row in results]
+        "total_count": total_count,
+        "students_list": students_list,
+        "course": course,
     }
 
 
@@ -522,6 +548,13 @@ async def get_guide_content(
     result.pop("pdf_data", None) 
     
     return result
+
+
+
+
+
+
+
 
 
 # --- ЗАПУСК СЕРВЕРА ---

@@ -138,3 +138,12 @@ class GuideSection(SQLModel, table=True):
     pdf_data: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
     
     active: bool = Field(default=True)
+
+
+from pydantic import BaseModel
+
+class TopStudentResponse(BaseModel):
+    full_name: str
+    gpa: float
+    specialty: str
+    course: int

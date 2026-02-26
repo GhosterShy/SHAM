@@ -21,55 +21,11 @@ let selectedLanguage = null;
 let selectedTopic = null;
 let selectedSubTopic = null;
 let inactivityTimer = null;
+let selectedCourse = 1
 let isSoundEnabled = localStorage.getItem("soundEnabled") !== "false";
 let popupAlreadyShown = false;
+let selectedRiskLevel = null;
 
-// ────────────────────────────────────────────────
-// 2. ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ (DOMContentLoaded)
-// ────────────────────────────────────────────────
-// document.addEventListener("DOMContentLoaded", () => {
-//   // Восстановление сообщений
-//   // const saved = JSON.parse(localStorage.getItem("chatMessages") || "[]");
-//   // Восстанавливаем сообщения (внутри DOMContentLoaded)
-//   saved.forEach((msg) => {
-//     const c = document.createElement("div");
-//     c.classList.add("message-container");
-//     const m = document.createElement("div");
-//     m.classList.add("message", msg.type === "received" ? "received" : "");
-
-//     if (msg.isImage) {
-//       const img = document.createElement("img");
-//       img.src = msg.text;
-//       m.appendChild(img);
-//     } else {
-//       m.innerHTML = msg.text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-//     }
-
-//     c.appendChild(m);
-//     chatMessages.appendChild(c);
-//   });
-//   chatMessages.scrollTop = chatMessages.scrollHeight;
-
-//   // Тема
-//   if (localStorage.getItem("theme") === "dark") {
-//     document.body.classList.add("dark-theme");
-//     chatContainer.classList.add("dark-theme");
-//     themeToggle.checked = true;
-//   }
-
-//   // Проверка языка
-//   selectedLanguage = localStorage.getItem("language");
-//   if (!selectedLanguage || !["kz", "ru", "en"].includes(selectedLanguage)) {
-//     localStorage.removeItem("language");
-//     showLanguageSelection();
-//   } else {
-//     updatePlaceholder();
-//     showGreeting();
-//     showTopicSelection();
-//   }
-
-//   updateInputButtons();
-// });
 
 // ────────────────────────────────────────────────
 // 3. БАЗОВЫЕ ФУНКЦИИ ИНТЕРФЕЙСА (UI)
@@ -108,9 +64,6 @@ function startInactivityTimer() {
   }, 300000); // 5 минут
 }
 
-// ────────────────────────────────────────────────
-// 4. УПРАВЛЕНИЕ СООБЩЕНИЯМИ И КНОПКАМИ ДЕЙСТВИЙ
-// ────────────────────────────────────────────────
 
 
 // ────────────────────────────────────────────────
@@ -144,28 +97,31 @@ function addReceivedMessage(text, imageSrc = null) {
   const container = document.createElement("div");
   container.classList.add("message-container");
 
-  // Если в тексте есть градиент (карточка анализа или студента)
-  if (text.includes("linear-gradient")) {
-    // 1. Создаем обертку, чтобы аватар и карточка стояли в ряд
+  // ИСПРАВЛЕНИЕ: Добавляем проверку на "<button", чтобы кнопки рендерились как карточки, а не как текст
+  if (text.includes("linear-gradient") || text.includes("<button")) {
+    
+    // 1. Создаем обертку для выравнивания (аватар + контент)
     const wrapper = document.createElement("div");
-    wrapper.style.cssText = "display: flex; align-items: flex-end; gap: 8px; width: 100%; justify-content: flex-start; margin-bottom: 10px;";
+    wrapper.style.cssText = "display: flex; align-items: center; gap: 10px; width: 100%; justify-content: flex-start;";
 
-    // 2. Добавляем аватарку бота
+    // 2. Аватарка бота
     const avatar = document.createElement("div");
     avatar.classList.add("bot-avatar");
-    avatar.innerHTML = `<img src="https://img.icons8.com/fluency/48/robot-2.png" alt="bot">`;
+    avatar.innerHTML = `<img src="https://img.icons8.com/fluency/48/robot-2.png" alt="bot" style="width:35px; height:35px;">`;
 
-    // 3. Создаем контейнер для самой карточки
-    const cardContent = document.createElement("div");
-    cardContent.style.flex = "0 1 auto"; 
-    cardContent.style.maxWidth = "85%"; // Ограничиваем, чтобы не прилипало к правому краю
-    cardContent.innerHTML = text;
+    // 3. Контейнер для карточки или кнопки
+    const content = document.createElement("div");
+    content.style.flex = "0 1 auto"; 
+    content.style.maxWidth = "85%";
+    
+    // Рендерим HTML напрямую (чтобы кнопка стала кнопкой, а не текстом)
+    content.innerHTML = text;
 
     wrapper.appendChild(avatar);
-    wrapper.appendChild(cardContent);
+    wrapper.appendChild(content);
     container.appendChild(wrapper);
   } else {
-    // Стандартный код для обычных текстовых сообщений
+    // Стандартный текстовый ответ
     const messageDiv = document.createElement("div");
     messageDiv.classList.add("message", "received");
 
@@ -326,8 +282,8 @@ async function selectTopic(title, action, hasSubtopics) {
 
       const courses =
         selectedLanguage === "kz"
-          ? ["1 курс", "2 курс", "3 курс", "4 курс", "Магистратура"]
-          : ["1 курс", "2 курс", "3 курс", "4 курс", "Магистратура"];
+          ? ["1 курс", "2 курс", "3 курс", "4 курс"]
+          : ["1 курс", "2 курс", "3 курс", "4 курс"];
 
       const containerCourse = document.createElement("div");
       containerCourse.classList.add("message-container");
@@ -352,11 +308,13 @@ async function selectTopic(title, action, hasSubtopics) {
       break;
 
     case "at_risk":
+      
       addReceivedMessage(
         selectedLanguage === "kz"
           ? "Қандай деңгейдегі қауіпті студенттерді көрсету керек?"
           : "Какой уровень риска показать?",
       );
+      
       const riskLevels =
         selectedLanguage === "kz"
           ? [
@@ -380,8 +338,9 @@ async function selectTopic(title, action, hasSubtopics) {
         btnRisk.classList.add("topic-btn");
         btnRisk.textContent = level;
         btnRisk.onclick = () => {
+          selectedRiskLevel = level;
           addSentMessage(level);
-          fetchAtRiskStudents(level);
+          showCourseSelectionForRisk()
         };
         divRisk.appendChild(btnRisk);
       });
@@ -389,36 +348,37 @@ async function selectTopic(title, action, hasSubtopics) {
       chatMessages.appendChild(containerRisk);
       break;
 
-    case "top_students":
-      addReceivedMessage(
+    case "top_students": // Рекомендую использовать ключ в нижнем регистре
+    addReceivedMessage(
         selectedLanguage === "kz"
-          ? "Топ студенттерді қалай көрсету керек?"
-          : "Как показать топ студентов?",
-      );
-      const topOptions = [
-        "Топ-10 по всем",
-        "Топ по 1 курсу",
-        "Топ по 2 курсу",
-        "Топ по 3 курсу",
-        "Топ по 4 курсу",
-      ];
-      const containerTop = document.createElement("div");
-      containerTop.classList.add("message-container");
-      const divTop = document.createElement("div");
-      divTop.classList.add("topic-selection");
-      topOptions.forEach((option) => {
+            ? "Үздік студенттерді қалай көрсету керек?"
+            : "Как показать отличников?",
+    );
+    
+    const topOptions = selectedLanguage === "kz" 
+        ? ["1-курс үздіктері", "2-курс үздіктері", "3-курс үздіктері", "4-курс үздіктері"]
+        : ["Топ по 1 курсу", "Топ по 2 курсу", "Топ по 3 курсу", "Топ по 4 курсу"];
+ы
+    const containerTop = document.createElement("div");
+    containerTop.classList.add("message-container");
+    const divTop = document.createElement("div");
+    divTop.classList.add("topic-selection");
+
+    topOptions.forEach((option, index) => {
         const btnTop = document.createElement("button");
         btnTop.classList.add("topic-btn");
         btnTop.textContent = option;
         btnTop.onclick = () => {
-          addSentMessage(option);
-          fetchTopStudents(option);
+            addSentMessage(option);
+            // index 0 - все, остальные соответствуют курсу 1, 2, 3, 4
+            const courseParam = index === 0 ? "all" : index;
+            fetchTopStudents(courseParam);
         };
         divTop.appendChild(btnTop);
-      });
-      containerTop.appendChild(divTop);
-      chatMessages.appendChild(containerTop);
-      break;
+    });
+    containerTop.appendChild(divTop);
+    chatMessages.appendChild(containerTop);
+    break;
 
     case "comparison":
       addReceivedMessage(
@@ -457,38 +417,6 @@ async function selectTopic(title, action, hasSubtopics) {
       selectedTopic = "analysis_by_subject_waiting";
       break;
 
-    case "performance_forecast":
-      addReceivedMessage(
-        selectedLanguage === "kz"
-          ? "Кімнің үлгерімін болжағыңыз келеді?"
-          : "Для кого сделать прогноз успеваемости?",
-      );
-      const forecastOptions =
-        selectedLanguage === "kz"
-          ? ["Белгілі студент үшін", "Топ үшін", "Курс үшін", "Барлығы үшін"]
-          : [
-              "Для конкретного студента",
-              "Для группы",
-              "Для курса",
-              "Общий прогноз",
-            ];
-      const containerForecast = document.createElement("div");
-      containerForecast.classList.add("message-container");
-      const divForecast = document.createElement("div");
-      divForecast.classList.add("topic-selection");
-      forecastOptions.forEach((option) => {
-        const btnForecast = document.createElement("button");
-        btnForecast.classList.add("topic-btn");
-        btnForecast.textContent = option;
-        btnForecast.onclick = () => {
-          addSentMessage(option);
-          startForecast(option);
-        };
-        divForecast.appendChild(btnForecast);
-      });
-      containerForecast.appendChild(divForecast);
-      chatMessages.appendChild(containerForecast);
-      break;
 
     case "guide":
   const guideReply = selectedLanguage === "kz"
@@ -675,6 +603,106 @@ document.getElementById("popup-expand-btn")?.addEventListener("click", () => {
   hideTyping();
   startInactivityTimer();
 }
+
+
+// Рендеринг списка лучших студентов
+
+function renderTopStudents(students) {
+    if (!students || students.length === 0) {
+        addReceivedMessage("Студенты не найдены 😔");
+        return;
+    }
+
+    // 1. Создаем заголовок и открывающий тег общего контейнера
+let html = `
+<div style="display:flex;flex-direction:column;gap:12px;width:100%;font-family:'Inter',sans-serif">
+
+<div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px">
+${selectedLanguage === "kz" ? "🏆 Үздік студенттер" : "🏆 Лучшие студенты"}
+</div>
+`;
+
+(students.students_list || []).forEach((s, i) => {
+
+  const medal = ["🥇","🥈","🥉"][i] || "👤";
+  const gpa = Number(s.gpa || 0).toFixed(2);
+  const gpaColor = s.gpa >= 3.67 ? "#10B981" : "#6366F1";
+
+  html += `
+  <div style="background:#fff;border:1px solid #E2E8F0;border-radius:14px;
+              padding:12px;display:flex;justify-content:space-between;
+              align-items:center;gap:10px">
+
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      <div style="font-size:20px;width:26px;text-align:center">${medal}</div>
+
+      <div style="min-width:0">
+        <div style="font-weight:600;font-size:14px;color:#1E293B;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${s.full_name || "-"}
+        </div>
+        <div style="font-size:12px;color:#64748B">
+          ${s.specialty_code || ""}
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:right;flex-shrink:0">
+      <div style="font-size:10px;color:#94A3B8;font-weight:700">GPA</div>
+      <div style="font-size:18px;font-weight:800;color:${gpaColor}">
+        ${gpa}
+      </div>
+    </div>
+
+  </div>
+  `;
+});
+
+html += `</div>`;
+
+// 4. Отправляем всю накопленную разметку в функцию отрисовки
+// Теперь условие (isHTML) в addReceivedMessage сработает корректно
+addReceivedMessage(html);
+}
+
+
+
+
+
+function showCourseSelectionForRisk() {
+  addReceivedMessage(
+    selectedLanguage === "kz"
+      ? "Қай курстың статистикасын көресіз?"
+      : "Для какого курса показать данные?",
+  );
+
+  const courses = ["1", "2", "3", "4", "Магистратура"];
+  
+  const containerCourse = document.createElement("div");
+  containerCourse.classList.add("message-container");
+  const divCourse = document.createElement("div");
+  divCourse.classList.add("topic-selection");
+
+  courses.forEach((course) => {
+    const btnCourse = document.createElement("button");
+    btnCourse.classList.add("topic-btn");
+    btnCourse.textContent = course + (selectedLanguage === "kz" ? "-курс" : " курс");
+    
+    btnCourse.onclick = () => {
+      addSentMessage(btnCourse.textContent);
+      
+      // Вызываем итоговую функцию, передавая и риск, и курс
+      fetchAtRiskStudents(selectedRiskLevel, course); 
+    };
+    divCourse.appendChild(btnCourse);
+  });
+
+  containerCourse.appendChild(divCourse);
+  chatMessages.appendChild(containerCourse);
+}
+
+
+
 
 // ────────────────────────────────────────────────
 // 7. ОБРАБОТКА ВВОДА (handleSend)
@@ -1064,6 +1092,23 @@ async function performStudentSearch(query) {
   startInactivityTimer();
 }
 
+
+
+// Рендеринг списка лучших студентов
+async function fetchTopStudents(course) {
+    try {
+        // Укажите ваш URL Render или localhost
+        const response = await axios.get(`${API_BASE_URL}/analysis/top_students`, {
+            params: { course: course, limit: 10,report_id:1 }
+        });
+        renderTopStudents(response.data);
+    } catch (error) {
+        console.error("Error fetching top students:", error);
+        addReceivedMessage("Не удалось загрузить список отличников ❌");
+    }
+}
+
+
 // ────────────────────────────────────────────────
 // 9. АНАЛИЗ И СТАТИСТИКА
 // ────────────────────────────────────────────────
@@ -1426,7 +1471,7 @@ let statsReply = `
   hideTyping();
   startInactivityTimer();
 }
-async function fetchAtRiskStudents(levelText) {
+async function fetchAtRiskStudents(levelText,course) {
   showTyping();
 
   try {
@@ -1440,6 +1485,11 @@ async function fetchAtRiskStudents(levelText) {
     } else {
       params.threshold = "all";
     }
+
+
+
+    params.report_id = 1;
+    params.course = course;
 
     const res = await axios.get(`${API_BASE_URL}/analysis/at_risk`, { params });
     const data = res.data;
@@ -1552,7 +1602,7 @@ async function fetchAtRiskStudents(levelText) {
     }
 
     addReceivedMessage(fullReply);
-  } catch (err) {
+  } catch (err) {fetchTopStudents
     console.error(err);
     addReceivedMessage(`
 <div style="background: #1E1E2E; color: #FFCCC8; padding: 20px; border-radius: 16px; text-align: center;">
@@ -1957,33 +2007,7 @@ function downloadComparisonPdf(val1, val2, gpa1, gpa2) {
     printWindow.document.close();
 }
 
-// ──────────────────────────────────────────────
-// 10. ПРОГНОЗ
-// ──────────────────────────────────────────────
-function startForecast(type) {
-  const isKz = selectedLanguage === "kz";
-  const title = isKz ? "AI Болжам" : "AI Прогноз успеваемости";
-  const promptText = isKz 
-    ? "Болжам жасау үшін ИИН немесе аты-жөніңізді енгізіңіз" 
-    : "Введите ИИН или ФИО студента для построения прогноза";
 
-  const forecastUI = `
-<div style="background: linear-gradient(135deg, #EC4899 0%, #8B5CF6 100%); 
-            color: white; padding: 20px; border-radius: 18px; margin: 10px 0; 
-            box-shadow: 0 8px 25px rgba(236, 72, 153, 0.3); display: flex; align-items: center; gap: 15px;">
-  <div style="font-size: 30px;">🔮</div>
-  <div>
-    <h4 style="margin: 0; font-size: 16px; opacity: 0.9;">${title}</h4>
-    <p style="margin: 5px 0 0; font-size: 14px; font-weight: 500;">${promptText}</p>
-  </div>
-</div>`;
-
-  addReceivedMessage(forecastUI);
-
-  selectedTopic = "forecast_waiting_input";
-  selectedSubTopic = type;
-  if (type.includes("Общий") || type.includes("Жалпы")) finishForecast("all");
-}
 
 async function finishForecast(input) {
   showTyping();
@@ -2060,6 +2084,21 @@ async function finishForecast(input) {
   hideTyping();
 }
 
+function openGuideSection(key) {
+  
+  fetchGuideContent(key, "Открыт раздел из AI");  // если у тебя есть такая функция
+  // Или просто сообщение
+  addReceivedMessage(`Открываю раздел Путеводителя: ${key}... 📖`);
+  // Или реальный переход — например, выбрать тему "Путеводитель" и открыть нужный key
+  // selectedTopic = "guide";
+  // fetchGuideContent(key, "Раздел из AI");
+}
+
+
+
+
+
+
 // ────────────────────────────────────────────────
 // 11. AI АССИСТЕНТ (OpenRouter)
 // ────────────────────────────────────────────────
@@ -2068,7 +2107,7 @@ async function queryAiAssistant(question) {
 
   try {
     // Твой реальный ключ OpenRouter
-    const OPENROUTER_API_KEY = "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";
+    const OPENROUTER_API_KEY = "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";
 
     // Язык пользователя
     const langMap = { kz: "казахский", ru: "русский", en: "английский" };
@@ -2178,7 +2217,7 @@ async function queryAiAssistant(question) {
     // Если есть кнопки — добавляем их отдельным сообщением
     if (buttonsHtml) {
       addReceivedMessage(`
-        <div style="margin-top: 12px; text-align: center;">
+        <div style="text-align: center;">
           ${buttonsHtml}
         </div>
       `);
