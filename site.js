@@ -358,7 +358,7 @@ async function selectTopic(title, action, hasSubtopics) {
     const topOptions = selectedLanguage === "kz" 
         ? ["1-курс үздіктері", "2-курс үздіктері", "3-курс үздіктері", "4-курс үздіктері"]
         : ["Топ по 1 курсу", "Топ по 2 курсу", "Топ по 3 курсу", "Топ по 4 курсу"];
-ы
+        
     const containerTop = document.createElement("div");
     containerTop.classList.add("message-container");
     const divTop = document.createElement("div");
