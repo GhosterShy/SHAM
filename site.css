@@ -9,6 +9,9 @@ body {
     height: 100vh;
 }
 
+
+
+
 .chat-container {
     width: 380px;
     height: 625px;
@@ -937,7 +940,6 @@ input:checked+.slider:before {
     overflow: hidden;
     background: var(--chat-bg, #ffffff);
     /* или #0f0f17 в тёмной теме */
-    border: 1px solid rgba(255, 255, 255, 0.08);
     /* лёгкая обводка в тёмной теме */
 
     /* Плавная анимация появления и исчезновения */
