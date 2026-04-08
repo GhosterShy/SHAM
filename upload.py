@@ -14,7 +14,7 @@ from psycopg2.extras import Json
 
 
 # Просто заменяем словарь на строку
-DATABASE_URL = "postgresql://shyna:zFssLpyztVWhz92024rEmsVibnhd5sXN@dpg-d65286npm1nc7385bjs0-a.virginia-postgres.render.com/diploma_db_bvrq"
+DATABASE_URL = "postgresql://diploma_db_7r1y_user:xXLVcNcvjt614nVAskNPWXckFTf4ekoE@dpg-d75av224d50c739al1h0-a.virginia-postgres.render.com/diploma_db_7r1y"
 
 # ...
 # И меняем вызов функции (убираем две звездочки **)
@@ -44,7 +44,7 @@ def migrate_json_to_postgres(file_path):
             # 3. Подготовка SQL
             sql = """
                 INSERT INTO guide_sections (
-                    key, "order", icon, 
+                    key, "sort_order", icon, 
                     title_ru, title_kz, title_en, 
                     short_ru, short_kz, short_en, 
                     content_ru, content_kz, content_en, 
