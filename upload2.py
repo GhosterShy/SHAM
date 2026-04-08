@@ -3,7 +3,7 @@ import psycopg2
 from datetime import datetime
 
 # Ваша строка подключения к Render
-DATABASE_URL = "postgresql://shyna:zFssLpyztVWhz92024rEmsVibnhd5sXN@dpg-d65286npm1nc7385bjs0-a.virginia-postgres.render.com/diploma_db_bvrq"
+DATABASE_URL = "postgresql://diploma_db_7r1y_user:xXLVcNcvjt614nVAskNPWXckFTf4ekoE@dpg-d75av224d50c739al1h0-a.virginia-postgres.render.com/diploma_db_7r1y"
 
 def upload_topics_from_json(file_path):
     conn = None
@@ -21,7 +21,7 @@ def upload_topics_from_json(file_path):
         sql = """
             INSERT INTO chat_topics (
                 title_ru, title_kz, title_en, 
-                "order", active, has_subtopics, action
+                "sort_order", active, has_subtopics, action
             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
 

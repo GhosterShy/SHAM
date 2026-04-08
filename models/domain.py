@@ -99,7 +99,7 @@ class ChatTopic(SQLModel, table=True):
     title_en: Optional[str] = None
     
     # "order" — зарезервированное слово в SQL, но в коде пишем так
-    order: int = Field(default=0)
+    order: int = Field(default=0, sa_column_kwargs={"name": "sort_order"})
     
     active: bool = Field(default=True)
     has_subtopics: bool = Field(default=False)
@@ -122,7 +122,7 @@ class GuideSection(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     key: str = Field(index=True, unique=True) # например, 'rules', 'contacts'
-    order: int = Field(default=0)
+    order: int = Field(default=0, sa_column_kwargs={"name": "sort_order"})
     icon: Optional[str] = None
     
     title_ru: str
