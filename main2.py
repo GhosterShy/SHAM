@@ -7,10 +7,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, func, or_, and_, col
 from sqlalchemy import Numeric,case,desc
+from contextlib import asynccontextmanager
 
 # Импорт моделей и зависимостей (убедись, что пути верны)
 from database import get_session
 from models.domain import Student, Grade, Discipline, ChatTopic, Report, GuideSection,TopStudentResponse
+from database import init_db
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Код здесь выполнится ПРИ ЗАПУСКЕ
+    print("🚀 Подключение к базе данных и создание таблиц...")
+    init_db() 
+    yield
+    # Код здесь выполнится ПРИ ВЫКЛЮЧЕНИИ
+    print("🛑 Отключение сервера...")
 
 
 app = FastAPI(title="StudentPerf API")
@@ -24,6 +35,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root():
+    return {"message": "Система мониторинга активна"}
 
 # --- 1. ТЕМЫ ЧАТА ---
 @app.get("/api/chat_topics")
